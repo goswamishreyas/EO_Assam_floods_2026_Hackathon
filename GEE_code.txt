@@ -1,0 +1,327 @@
+var sent2 = ee.ImageCollection("COPERNICUS/S2_SR_HARMONIZED"),
+    sent1 = ee.ImageCollection("COPERNICUS/S1_GRD"),
+    assam_flood_aoi = 
+    /* color: #d63000 */
+    /* shown: false */
+    /* displayProperties: [
+      {
+        "type": "rectangle"
+      }
+    ] */
+    ee.Geometry.Polygon(
+        [[[94.00452651447095, 27.43189464163297],
+          [94.00452651447095, 26.639255159525785],
+          [95.38880385822095, 26.639255159525785],
+          [95.38880385822095, 27.43189464163297]]], null, false),
+    ndvi_stack_VisParam = {"opacity":1,"bands":["2025-06-11_NDVI","2025-10-19_NDVI","2025-11-18_NDVI"],"min":-0.5719063545150502,"max":0.8880733944954129,"gamma":1},
+    floodVisParam = {"opacity":1,"bands":["VV"],"palette":["ffffff","3123ff"]},
+    imageVisParam = {"opacity":1,"bands":["MNDWI"],"min":0,"max":1,"palette":["ff0000","ffa41b","fffa62","ffffff"]};
+
+
+
+
+
+
+var aoi = assam_flood_aoi;
+
+
+// /// SEntinel 1=========================================
+
+var bef_start_date = '2026-07-01'
+var bef_end_date = '2026-07-15'
+
+var aft_start_date = '2026-07-15'
+var aft_end_date = '2026-08-15'
+
+// /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// // WITH FILTERING
+
+var wrapper = require('users/adugnagirma/gee_s1_ard:wrapper');
+var helper = require('users/adugnagirma/gee_s1_ard:utilities');
+// //print(wrapper)
+
+var parameter = {//1. Data Selection
+              START_DATE:bef_start_date, 
+              STOP_DATE:bef_end_date, 
+              POLARIZATION:'VV',
+              ORBIT : 'DESCENDING',
+              GEOMETRY: aoi, 
+              //2. Additional Border noise correction
+              APPLY_ADDITIONAL_BORDER_NOISE_CORRECTION: true,
+              //3.Speckle filter
+              APPLY_SPECKLE_FILTERING: true,
+              SPECKLE_FILTER_FRAMEWORK: 'MONO',
+              SPECKLE_FILTER: 'REFINED LEE',
+              SPECKLE_FILTER_KERNEL_SIZE: 9,
+              SPECKLE_FILTER_NR_OF_IMAGES: 10,
+              //4. Radiometric terrain normalization
+              APPLY_TERRAIN_FLATTENING: true,
+              DEM: ee.Image('USGS/SRTMGL1_003'),
+              TERRAIN_FLATTENING_MODEL: 'VOLUME',
+              TERRAIN_FLATTENING_ADDITIONAL_LAYOVER_SHADOW_BUFFER: 0,
+              //5. Output
+              FORMAT : 'LINEAR',
+              CLIP_TO_ROI: true,
+              SAVE_ASSETS: false
+}
+
+
+//Preprocess the S1 collection
+var s1_preprocces = wrapper.s1_preproc(parameter);
+
+var s1 = s1_preprocces[0]
+s1_preprocces = s1_preprocces[1]
+
+//Visulaization of the first image in the collection in RGB for VV, VH, images
+var visparam = {}
+if (parameter.POLARIZATION=='VVVH'){
+    if (parameter.FORMAT=='DB'){
+    var s1_preprocces_view = s1_preprocces.map(helper.add_ratio_lin).map(helper.lin_to_db2);
+    var s1_view = s1.map(helper.add_ratio_lin).map(helper.lin_to_db2);
+    visparam = {bands:['VV','VH','VVVH_ratio'],min: [-20, -25, 1],max: [0, -5, 15]}
+    }
+    else {
+    var s1_preprocces_view = s1_preprocces.map(helper.add_ratio_lin);
+    var s1_view = s1.map(helper.add_ratio_lin);
+    visparam = {bands:['VV','VH','VVVH_ratio'], min: [0.01, 0.0032, 1.25],max: [1, 0.31, 31.62]}
+    }
+}
+else {
+    if (parameter.FORMAT=='DB') {
+    s1_preprocces_view = s1_preprocces.map(helper.lin_to_db);
+    s1_view = s1.map(helper.lin_to_db);
+    visparam = {bands:[parameter.POLARIZATION],min: -25,max: 0}   
+    }
+    else {
+    s1_preprocces_view = s1_preprocces;
+    s1_view = s1;
+    visparam = {bands:[parameter.POLARIZATION],min: 0,max: 0.2}
+    }
+}
+
+
+Map.setOptions('SATELLITE')
+Map.centerObject(parameter.GEOMETRY, 15);
+
+print('Before collection: ',  s1_preprocces_view.filter(ee.Filter.eq('relativeOrbitNumber_start',4))) //.filter(ee.Filter.eq('sliceNumber',11))
+var rel_orbit_list = s1_preprocces_view.aggregate_array('relativeOrbitNumber_start').distinct()
+print('Unique orbites relative :',rel_orbit_list)
+
+// Map.addLayer(s1_view.first(), visparam, 'First image in the input S1 collection', true);
+// Map.addLayer(ee.Image(s1_preprocces_view.filter(ee.Filter.eq('relativeOrbitNumber_start',4)).toList(2).get(1)), visparam, 'Preprocessed before', false);
+
+var before = ee.Image(s1_preprocces_view.filter(ee.Filter.eq('relativeOrbitNumber_start',4)).toList(2).get(1));
+Map.addLayer(before, visparam, 'Preprocessed before 5th july 2026');
+
+var parameter = {//1. Data Selection
+              START_DATE:aft_start_date, 
+              STOP_DATE:aft_end_date, 
+              POLARIZATION:'VV',
+              ORBIT : 'DESCENDING',
+              GEOMETRY: aoi, 
+              //2. Additional Border noise correction
+              APPLY_ADDITIONAL_BORDER_NOISE_CORRECTION: true,
+              //3.Speckle filter
+              APPLY_SPECKLE_FILTERING: true,
+              SPECKLE_FILTER_FRAMEWORK: 'MONO',
+              SPECKLE_FILTER: 'REFINED LEE',
+              SPECKLE_FILTER_KERNEL_SIZE: 9,
+              SPECKLE_FILTER_NR_OF_IMAGES: 10,
+              //4. Radiometric terrain normalization
+              APPLY_TERRAIN_FLATTENING: true,
+              DEM: ee.Image('USGS/SRTMGL1_003'),
+              TERRAIN_FLATTENING_MODEL: 'VOLUME',
+              TERRAIN_FLATTENING_ADDITIONAL_LAYOVER_SHADOW_BUFFER: 0,
+              //5. Output
+              FORMAT : 'LINEAR',
+              CLIP_TO_ROI: true,
+              SAVE_ASSETS: false
+}
+
+
+//Preprocess the S1 collection
+var s1_preprocces = wrapper.s1_preproc(parameter);
+
+var s1 = s1_preprocces[0]
+s1_preprocces = s1_preprocces[1]
+
+//Visulaization of the first image in the collection in RGB for VV, VH, images
+var visparam = {}
+if (parameter.POLARIZATION=='VVVH'){
+    if (parameter.FORMAT=='DB'){
+    var s1_preprocces_view = s1_preprocces.map(helper.add_ratio_lin).map(helper.lin_to_db2);
+    var s1_view = s1.map(helper.add_ratio_lin).map(helper.lin_to_db2);
+    visparam = {bands:['VV','VH','VVVH_ratio'],min: [-20, -25, 1],max: [0, -5, 15]}
+    }
+    else {
+    var s1_preprocces_view = s1_preprocces.map(helper.add_ratio_lin);
+    var s1_view = s1.map(helper.add_ratio_lin);
+    visparam = {bands:['VV','VH','VVVH_ratio'], min: [0.01, 0.0032, 1.25],max: [1, 0.31, 31.62]}
+    }
+}
+else {
+    if (parameter.FORMAT=='DB') {
+    s1_preprocces_view = s1_preprocces.map(helper.lin_to_db);
+    s1_view = s1.map(helper.lin_to_db);
+    visparam = {bands:[parameter.POLARIZATION],min: -25,max: 0}   
+    }
+    else {
+    s1_preprocces_view = s1_preprocces;
+    s1_view = s1;
+    visparam = {bands:[parameter.POLARIZATION],min: 0,max: 0.2}
+    }
+}
+
+
+Map.setOptions('SATELLITE')
+Map.centerObject(parameter.GEOMETRY, 15);
+
+print('After collection: ',s1_preprocces_view.filter(ee.Filter.eq('relativeOrbitNumber_start',4)))
+var rel_orbit_list = s1_preprocces_view.aggregate_array('relativeOrbitNumber_start').distinct()
+print('Unique orbites relative :',rel_orbit_list)
+
+// // Map.addLayer(s1_view.first(), visparam, 'First image in the input S1 collection', true);
+// Map.addLayer(s1_preprocces_view.filter(ee.Filter.eq('relativeOrbitNumber_start',4)).first(), visparam, 'Preprocessed after', false);
+
+var after = s1_preprocces_view.filter(ee.Filter.eq('relativeOrbitNumber_start',4)).first(); // 17 july
+
+var after_1 = ee.Image(s1_preprocces_view.filter(ee.Filter.eq('relativeOrbitNumber_start',4)).toList(2).get(1)); // 29 july
+
+Map.addLayer(after, visparam, 'Preprocessed after 17th july 2026', false);
+Map.addLayer(after_1, visparam, 'Preprocessed after 29th july 2026', false);
+
+
+var ratio = before.select('VV').divide(after.select('VV'));
+
+var ratio_1 = before.select('VV').divide(after_1.select('VV'));
+
+
+Map.addLayer(ratio,{},'Preprocessed ratio image layer of VV bands', false);
+Map.addLayer(ratio_1,{},'Preprocessed ratio 1 image layer of VV bands', false);
+
+
+var flood_mask = ratio.select('VV').gte(2.0)//.and(smooth.select('VV').lte(18))
+flood_mask = flood_mask.updateMask(flood_mask.neq(0))
+
+// // Smooth using focal mean (9x9 kernel)
+// var flood_mask = flood_mask.focal_mode({
+//   radius: 4.5,
+//   kernelType: 'square'
+// });
+
+var flood_mask_1 = ratio_1.select('VV').gte(2.0)//.and(smooth.select('VV').lte(18))
+flood_mask_1 = flood_mask_1.updateMask(flood_mask_1.neq(0))
+
+// // Smooth using focal mean (9x9 kernel)
+// var flood_mask_1 = flood_mask_1.focal_mode({
+//   radius: 4.5,
+// });
+
+Map.addLayer(flood_mask,floodVisParam,'july 17 preprocessed Ratio Mask for the flooded regions')
+
+Map.addLayer(flood_mask_1,floodVisParam,'july 29 preprocessed Ratio Mask for the flooded regions')
+
+// ============ cropland mask ===========================
+
+var image_coll = sent2
+//.filter(ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE',30))
+.filterBounds(assam_flood_aoi)
+.filterDate('2025-06-01','2025-11-30')
+
+print('Image collection', image_coll)
+
+// Function to date as a property of the image
+var add_date = function(image)
+{
+  var system_date = ee.Date(image.get('system:time_start')).format().slice(0,10);
+  image = image.set({'Date':system_date})
+  return image
+}
+
+var new_coll = image_coll.map(add_date)
+print(new_coll)
+// Get a list of unique dates in the image collection
+var date_list = new_coll.aggregate_array('Date').distinct()
+print(date_list)
+// print(ee.Date(date_list.get(4)))
+
+// Function to create mosaic from the images for each unique date
+var mosaic_unique_date = function(date)    
+{
+  date = ee.Date(date)
+  var mosaic = new_coll.select(['B2','B8','B4','B3','B11']).filterDate(date,date.advance(1,'day')).mosaic().divide(10000).clip(aoi)
+  var ndvi = mosaic.normalizedDifference(['B8','B4']).rename('NDVI');
+  var ndmi = mosaic.normalizedDifference(['B8','B11']).rename('NDMI');
+  var ndwi = mosaic.normalizedDifference(['B3', 'B8']).rename('NDWI');
+  var mndwi = mosaic.normalizedDifference(['B3','B11']).rename('MNDWI');
+  mosaic = mosaic.addBands([ndvi,ndmi,ndwi,mndwi]);
+  mosaic = mosaic.set({
+    'system:index': date.format().slice(0,10),
+    'Date':date
+  })
+  return mosaic.select(['B11','B8','B4','B3','B2','NDVI','NDMI','NDWI','MNDWI']);
+}
+
+// Creating a collection of mosaic from each unique date of the image collection
+var mosaic_coll = date_list.map(mosaic_unique_date)
+mosaic_coll = ee.ImageCollection.fromImages(mosaic_coll)
+// print('Mosaic collection: ',mosaic_coll)
+
+var ndvi_stack = mosaic_coll.select('NDVI').toBands()
+
+Map.addLayer(ndvi_stack,ndvi_stack_VisParam,'NDVI stack', false)
+
+var mask_1 = ndvi_stack.select('2025-06-11_NDVI').lte(0.5)
+var mask_2 = ndvi_stack.select('2025-10-19_NDVI').gte(0.6)
+var mask_3 = ndvi_stack.select('2025-10-24_NDVI').gte(0.6)
+var mask_4 = ndvi_stack.select('2025-11-28_NDVI').lte(0.5)
+
+var crop_mask = mask_1.and(mask_2).and(mask_3).and(mask_4)
+
+crop_mask = crop_mask.updateMask(crop_mask.neq(0))
+
+Map.addLayer(crop_mask,{},'Mask cropland')
+
+// ====== flood severity ===============
+
+var mask_freq = (flood_mask.unmask().add(flood_mask_1.unmask())).updateMask(crop_mask) // Masked with kharif crop layer from 2025;
+
+Map.addLayer(mask_freq, {}, 'flood frequency')
+
+var severe_mask = mask_freq.eq(2)
+severe_mask = severe_mask.updateMask(severe_mask.neq(0))
+
+Map.addLayer(severe_mask,{},'Severe flood mask')
+
+
+// // ================== export ===========================================
+
+// Export.image.toDrive({
+//   image: flood_mask.unmask().clip(aoi), 
+//   description: 'Flood_Mask_17th_july_26', 
+//   folder: 'GEE_assam_floods_2026', 
+//   region: aoi, 
+//   scale: 10, 
+//   crs: 'EPSG:4326', 
+//   maxPixels: 1e13,
+// })
+
+// Export.image.toDrive({
+//   image: flood_mask_1.unmask().clip(aoi), 
+//   description: 'Flood_Mask_29th_july_26', 
+//   folder: 'GEE_assam_floods_2026', 
+//   region: aoi, 
+//   scale: 10, 
+//   crs: 'EPSG:4326', 
+//   maxPixels: 1e13,
+// })
+
+// Export.image.toDrive({
+//   image: crop_mask.unmask().clip(aoi), 
+//   description: 'Crop_mask_kharif_2025', 
+//   folder: 'GEE_assam_floods_2026', 
+//   region: aoi, 
+//   scale: 10, 
+//   crs: 'EPSG:4326', 
+//   maxPixels: 1e13,
+// })
